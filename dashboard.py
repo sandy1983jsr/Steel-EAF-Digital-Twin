@@ -21,6 +21,9 @@ agg_level = st.sidebar.selectbox(
     index=0
 )
 
+# Number of last points to show
+max_points = st.sidebar.slider("Show last N datapoints", min_value=10, max_value=200, value=50, step=10)
+
 # Data acquisition logic
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
@@ -87,20 +90,23 @@ with col1:
     if history:
         df = to_dataframe(history)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        st.dataframe(df.tail(20))
+        # Only keep the last max_points rows for display and plotting
+        df = df.sort_values("timestamp").tail(max_points)
+        st.dataframe(df.tail(max_points))
 
         # Aggregated data and model application
         agg_df = aggregate_df(df, agg_level)
         agg_df = apply_model_and_anomaly(agg_df)
-        st.subheader(f"{agg_level} Consolidation with Model Predictions & Anomalies")
-        st.dataframe(agg_df.tail(20))
+        agg_df = agg_df.sort_values("timestamp").tail(max_points)
+        st.subheader(f"{agg_level} Consolidation with Model Predictions & Anomalies (Last {max_points} points)")
+        st.dataframe(agg_df.tail(max_points))
 
         # Show time series trends for all major parameters
-        st.subheader("Time Series Trends")
+        st.subheader("Time Series Trends (Last N points)")
         st.line_chart(agg_df.set_index('timestamp')[['temperature', 'pressure', 'CO_content', 'feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
 
         # Show time series of predicted hot metal output and anomalies
-        st.subheader("Predicted Hot Metal Output (Time Series)")
+        st.subheader("Predicted Hot Metal Output (Time Series, Last N points)")
         st.line_chart(agg_df.set_index('timestamp')[['predicted_hot_metal']])
 
         # Highlight anomalies on the output chart
