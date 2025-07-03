@@ -10,8 +10,7 @@ class AdvancedSteelMeltingShopSimulator:
         pass
 
     def simulate_step(self, row):
-        # Example more-physical SMS twin logic (replace coefficients as needed)
-        # Inputs
+        # Example physically-inspired SMS twin logic (replace coefficients as needed)
         scrap = row.get("scrap_charge", 0)
         dri = row.get("dri_charge", 0)
         hot_metal = row.get("hot_metal_charge", 0)
@@ -20,7 +19,6 @@ class AdvancedSteelMeltingShopSimulator:
         lime = row.get("lime_addition", 0)
         dolomite = row.get("dolomite_addition", 0)
         alloy = row.get("alloy_addition", 0)
-        # Derived
         total_charge = scrap + dri + hot_metal
 
         # 1. Predicted tapping temperature (°C)
@@ -250,7 +248,7 @@ def add_sms_predictions_and_anomalies_advanced(df):
     for kpi in preds[0].keys():
         df[f'predicted_{kpi.replace("predicted_", "")}'] = [p[kpi] for p in preds]
     df['anomaly'] = [
-        detect_sms_kpi_anomalies({**row.to_dict(), **preds[i]}) for i, row in enumerate(df.itertuples(index=False))
+        detect_sms_kpi_anomalies({**row._asdict(), **preds[i]}) for i, row in enumerate(df.itertuples(index=False))
     ]
     return df
 
