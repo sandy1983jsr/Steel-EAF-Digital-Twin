@@ -9,14 +9,20 @@ st.title("Arjas Steel - Blast Furnace Digital Twin Dashboard")
 
 model = BlastFurnaceSimulator()
 
-# File uploader for CSV data
+# Sidebar: File uploader and controls
 uploaded_file = st.sidebar.file_uploader("Upload CSV data", type=["csv"])
 use_sample = st.sidebar.checkbox("Use sample (simulated) data", value=True if not uploaded_file else False)
+
+# Select aggregation level
+agg_level = st.sidebar.selectbox(
+    "Consolidation Level",
+    ["Hourly", "Daily", "Monthly", "Yearly"],
+    index=0
+)
 
 # Data acquisition logic
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    # Try to ensure column names match; if not, show warning
     expected_cols = {"timestamp", "temperature", "pressure", "CO_content", "feed_rate", "air_flow", "hot_metal_level", "slag_rate"}
     uploaded_cols = set(df.columns)
     if not expected_cols.issubset(uploaded_cols):
@@ -28,7 +34,6 @@ if uploaded_file:
     df = df.dropna(subset=["timestamp"])
     history = df.to_dict("records")
 elif use_sample or not uploaded_file:
-    # Use or initialize session state for simulated data
     if 'sensor_history' not in st.session_state:
         st.session_state['sensor_history'] = []
     history = st.session_state['sensor_history']
@@ -37,6 +42,24 @@ else:
     st.stop()
 
 col1, col2 = st.columns([2, 1])
+
+# Helper: Aggregate DataFrame according to selection
+def aggregate_df(df, level):
+    df = df.copy()
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.set_index('timestamp')
+    if level == "Hourly":
+        grouped = df.resample('H').mean(numeric_only=True)
+    elif level == "Daily":
+        grouped = df.resample('D').mean(numeric_only=True)
+    elif level == "Monthly":
+        grouped = df.resample('M').mean(numeric_only=True)
+    elif level == "Yearly":
+        grouped = df.resample('Y').mean(numeric_only=True)
+    else:
+        grouped = df
+    grouped = grouped.reset_index()
+    return grouped
 
 with col1:
     if not uploaded_file:
@@ -49,11 +72,17 @@ with col1:
 
     if history:
         df = to_dataframe(history)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
         st.dataframe(df.tail(20))
 
-        # Show trends
-        st.line_chart(df.set_index('timestamp')[['temperature', 'pressure', 'CO_content']])
-        st.line_chart(df.set_index('timestamp')[['feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
+        # Aggregated data
+        agg_df = aggregate_df(df, agg_level)
+        st.subheader(f"{agg_level} Consolidation (Mean Values)")
+        st.dataframe(agg_df.tail(20))
+
+        # Show trends on aggregation
+        st.line_chart(agg_df.set_index('timestamp')[['temperature', 'pressure', 'CO_content']])
+        st.line_chart(agg_df.set_index('timestamp')[['feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
     else:
         st.info("Click the button to get sensor data or upload a CSV.")
 
