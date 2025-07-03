@@ -50,6 +50,7 @@ col1, col2 = st.columns([2, 1])
 def aggregate_df(df, level):
     df = df.copy()
     df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values("timestamp")
     df = df.set_index('timestamp')
     if level == "Hourly":
         grouped = df.resample('H').mean(numeric_only=True)
@@ -66,6 +67,7 @@ def aggregate_df(df, level):
 
 # Apply digital twin model & anomaly detection to time series
 def apply_model_and_anomaly(df):
+    df = df.copy()
     model_outputs = []
     anomaly_flags = []
     for _, row in df.iterrows():
@@ -88,32 +90,53 @@ with col1:
             history = st.session_state['sensor_history']
 
     if history:
+        # Convert to DataFrame and sort by timestamp
         df = to_dataframe(history)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        # Only keep the last max_points rows for display and plotting
-        df = df.sort_values("timestamp").tail(max_points)
-        st.dataframe(df.tail(max_points))
+        df = df.sort_values("timestamp")
 
-        # Aggregated data and model application
+        # Limit to last max_points raw data for display
+        df_last = df.tail(max_points)
+        st.dataframe(df_last)
+
+        # Aggregated data and model application (on ALL data, then take last N points)
         agg_df = aggregate_df(df, agg_level)
         agg_df = apply_model_and_anomaly(agg_df)
-        agg_df = agg_df.sort_values("timestamp").tail(max_points)
+        agg_df = agg_df.sort_values("timestamp")
+
+        # Limit to last max_points for display and plotting
+        agg_df_last = agg_df.tail(max_points)
         st.subheader(f"{agg_level} Consolidation with Model Predictions & Anomalies (Last {max_points} points)")
-        st.dataframe(agg_df.tail(max_points))
+        st.dataframe(agg_df_last)
 
-        # Show time series trends for all major parameters
+        # Show time series trends for all major parameters (last N points)
         st.subheader("Time Series Trends (Last N points)")
-        st.line_chart(agg_df.set_index('timestamp')[['temperature', 'pressure', 'CO_content', 'feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
+        plot_cols = ['temperature', 'pressure', 'CO_content', 'feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']
+        # Only plot columns that exist (in case of missing columns due to aggregation)
+        plot_cols = [col for col in plot_cols if col in agg_df_last.columns]
+        if plot_cols:
+            st.line_chart(
+                data=agg_df_last.set_index('timestamp')[plot_cols],
+                use_container_width=True
+            )
+        else:
+            st.info("No process variables available for plotting.")
 
-        # Show time series of predicted hot metal output and anomalies
+        # Show time series of predicted hot metal output and anomalies (last N points)
         st.subheader("Predicted Hot Metal Output (Time Series, Last N points)")
-        st.line_chart(agg_df.set_index('timestamp')[['predicted_hot_metal']])
+        if 'predicted_hot_metal' in agg_df_last.columns:
+            st.line_chart(
+                data=agg_df_last.set_index('timestamp')[['predicted_hot_metal']],
+                use_container_width=True
+            )
+        else:
+            st.info("No predicted hot metal output data available.")
 
         # Highlight anomalies on the output chart
-        anomaly_points = agg_df[agg_df['anomaly']]
+        anomaly_points = agg_df_last[agg_df_last['anomaly']]
         if not anomaly_points.empty:
             st.warning(f"Anomalies detected at {len(anomaly_points)} time points. See table below.")
-            st.dataframe(anomaly_points[['timestamp', 'predicted_hot_metal'] + [c for c in agg_df.columns if c not in ['timestamp', 'predicted_hot_metal', 'anomaly']]])
+            st.dataframe(anomaly_points[['timestamp', 'predicted_hot_metal'] + [c for c in agg_df_last.columns if c not in ['timestamp', 'predicted_hot_metal', 'anomaly']]])
     else:
         st.info("Click the button to get sensor data or upload a CSV.")
 
