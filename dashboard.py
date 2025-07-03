@@ -61,6 +61,20 @@ def aggregate_df(df, level):
     grouped = grouped.reset_index()
     return grouped
 
+# Apply digital twin model & anomaly detection to time series
+def apply_model_and_anomaly(df):
+    model_outputs = []
+    anomaly_flags = []
+    for _, row in df.iterrows():
+        row_dict = row.to_dict()
+        pred = model.simulate_step(row_dict)
+        model_outputs.append(pred['predicted_hot_metal'])
+        anomaly = detect_anomaly(row_dict)
+        anomaly_flags.append(bool(anomaly))
+    df['predicted_hot_metal'] = model_outputs
+    df['anomaly'] = anomaly_flags
+    return df
+
 with col1:
     if not uploaded_file:
         if st.button("Get Latest Sensor Data"):
@@ -75,23 +89,34 @@ with col1:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         st.dataframe(df.tail(20))
 
-        # Aggregated data
+        # Aggregated data and model application
         agg_df = aggregate_df(df, agg_level)
-        st.subheader(f"{agg_level} Consolidation (Mean Values)")
+        agg_df = apply_model_and_anomaly(agg_df)
+        st.subheader(f"{agg_level} Consolidation with Model Predictions & Anomalies")
         st.dataframe(agg_df.tail(20))
 
         # Show time series trends for all major parameters
         st.subheader("Time Series Trends")
         st.line_chart(agg_df.set_index('timestamp')[['temperature', 'pressure', 'CO_content', 'feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
+
+        # Show time series of predicted hot metal output and anomalies
+        st.subheader("Predicted Hot Metal Output (Time Series)")
+        st.line_chart(agg_df.set_index('timestamp')[['predicted_hot_metal']])
+
+        # Highlight anomalies on the output chart
+        anomaly_points = agg_df[agg_df['anomaly']]
+        if not anomaly_points.empty:
+            st.warning(f"Anomalies detected at {len(anomaly_points)} time points. See table below.")
+            st.dataframe(anomaly_points[['timestamp', 'predicted_hot_metal'] + [c for c in agg_df.columns if c not in ['timestamp', 'predicted_hot_metal', 'anomaly']]])
     else:
         st.info("Click the button to get sensor data or upload a CSV.")
 
 with col2:
     if history:
         latest = history[-1]
-        # Simulate
+        # Simulate for latest only (for what-if etc)
         pred = model.simulate_step(latest)
-        st.metric("Predicted Hot Metal Output (TPH)", f"{pred['predicted_hot_metal']:.2f}")
+        st.metric("Predicted Hot Metal Output (Latest)", f"{pred['predicted_hot_metal']:.2f}")
 
         # Anomaly detection
         anomaly = detect_anomaly(latest)
