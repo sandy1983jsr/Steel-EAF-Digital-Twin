@@ -3,6 +3,7 @@ import pandas as pd
 from data_acquisition import get_sensor_data
 from data_processing import clean_data, to_dataframe
 from blast_furnace_model import BlastFurnaceSimulator, detect_anomaly
+from what_if_analysis import what_if_interface
 
 st.set_page_config(page_title="Arjas Steel Blast Furnace Digital Twin", layout="wide")
 st.title("Arjas Steel - Blast Furnace Digital Twin Dashboard")
@@ -43,7 +44,6 @@ else:
 
 col1, col2 = st.columns([2, 1])
 
-# Helper: Aggregate DataFrame according to selection
 def aggregate_df(df, level):
     df = df.copy()
     df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -80,9 +80,9 @@ with col1:
         st.subheader(f"{agg_level} Consolidation (Mean Values)")
         st.dataframe(agg_df.tail(20))
 
-        # Show trends on aggregation
-        st.line_chart(agg_df.set_index('timestamp')[['temperature', 'pressure', 'CO_content']])
-        st.line_chart(agg_df.set_index('timestamp')[['feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
+        # Show time series trends for all major parameters
+        st.subheader("Time Series Trends")
+        st.line_chart(agg_df.set_index('timestamp')[['temperature', 'pressure', 'CO_content', 'feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']])
     else:
         st.info("Click the button to get sensor data or upload a CSV.")
 
@@ -99,6 +99,14 @@ with col2:
             st.error(f"Anomalies detected: {anomaly}")
         else:
             st.success("No anomalies detected.")
+
+    # What-If Analysis section
+    st.markdown("---")
+    st.header("What-If Analysis")
+    if history:
+        what_if_interface(model, latest)
+    else:
+        st.info("Upload data or collect a sample to run What-If analysis.")
 
 st.markdown("---")
 st.caption("© Arjas Steel Digital Twin Example")
