@@ -14,15 +14,15 @@ model = BlastFurnaceSimulator()
 uploaded_file = st.sidebar.file_uploader("Upload CSV data", type=["csv"])
 use_sample = st.sidebar.checkbox("Use sample (simulated) data", value=True if not uploaded_file else False)
 
-# Select aggregation level
+# Select aggregation level for OPTIONAL aggregated views
 agg_level = st.sidebar.selectbox(
-    "Consolidation Level",
+    "Consolidation Level (for aggregation table below)",
     ["Hourly", "Daily", "Monthly", "Yearly"],
     index=0
 )
 
-# Number of last points to show
-max_points = st.sidebar.slider("Show last N datapoints", min_value=10, max_value=200, value=50, step=10)
+# Number of last points to show (raw)
+max_points = st.sidebar.slider("Show last N datapoints (raw)", min_value=10, max_value=200, value=50, step=10)
 
 # Data acquisition logic
 if uploaded_file:
@@ -65,19 +65,14 @@ def aggregate_df(df, level):
     grouped = grouped.reset_index()
     return grouped
 
-# Apply digital twin model & anomaly detection to time series
-def apply_model_and_anomaly(df):
+def add_predictions_and_anomalies(df):
     df = df.copy()
-    model_outputs = []
-    anomaly_flags = []
-    for _, row in df.iterrows():
-        row_dict = row.to_dict()
-        pred = model.simulate_step(row_dict)
-        model_outputs.append(pred['predicted_hot_metal'])
-        anomaly = detect_anomaly(row_dict)
-        anomaly_flags.append(bool(anomaly))
-    df['predicted_hot_metal'] = model_outputs
-    df['anomaly'] = anomaly_flags
+    df['predicted_hot_metal'] = [
+        model.simulate_step(row.to_dict())['predicted_hot_metal'] for _, row in df.iterrows()
+    ]
+    df['anomaly'] = [
+        bool(detect_anomaly(row.to_dict())) for _, row in df.iterrows()
+    ]
     return df
 
 with col1:
@@ -90,53 +85,46 @@ with col1:
             history = st.session_state['sensor_history']
 
     if history:
-        # Convert to DataFrame and sort by timestamp
+        # -- RAW DATA, last N points --
         df = to_dataframe(history)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.sort_values("timestamp")
-
-        # Limit to last max_points raw data for display
         df_last = df.tail(max_points)
+        df_last = add_predictions_and_anomalies(df_last)
+
+        st.subheader(f"Last {max_points} Raw Data Points with Model Prediction & Anomaly")
         st.dataframe(df_last)
 
-        # Aggregated data and model application (on ALL data, then take last N points)
-        agg_df = aggregate_df(df, agg_level)
-        agg_df = apply_model_and_anomaly(agg_df)
-        agg_df = agg_df.sort_values("timestamp")
-
-        # Limit to last max_points for display and plotting
-        agg_df_last = agg_df.tail(max_points)
-        st.subheader(f"{agg_level} Consolidation with Model Predictions & Anomalies (Last {max_points} points)")
-        st.dataframe(agg_df_last)
-
-        # Show time series trends for all major parameters (last N points)
-        st.subheader("Time Series Trends (Last N points)")
+        # Time series trends for all major parameters (raw data, last N)
+        st.subheader("Time Series Trends (Last N points – Raw Data)")
         plot_cols = ['temperature', 'pressure', 'CO_content', 'feed_rate', 'air_flow', 'hot_metal_level', 'slag_rate']
-        # Only plot columns that exist (in case of missing columns due to aggregation)
-        plot_cols = [col for col in plot_cols if col in agg_df_last.columns]
+        plot_cols = [col for col in plot_cols if col in df_last.columns]
         if plot_cols:
-            st.line_chart(
-                data=agg_df_last.set_index('timestamp')[plot_cols],
-                use_container_width=True
-            )
+            st.line_chart(df_last.set_index('timestamp')[plot_cols], use_container_width=True)
         else:
             st.info("No process variables available for plotting.")
 
-        # Show time series of predicted hot metal output and anomalies (last N points)
-        st.subheader("Predicted Hot Metal Output (Time Series, Last N points)")
-        if 'predicted_hot_metal' in agg_df_last.columns:
-            st.line_chart(
-                data=agg_df_last.set_index('timestamp')[['predicted_hot_metal']],
-                use_container_width=True
-            )
+        # Predicted hot metal output time series (raw data, last N)
+        st.subheader("Predicted Hot Metal Output (Time Series, Last N Raw Points)")
+        if 'predicted_hot_metal' in df_last.columns:
+            st.line_chart(df_last.set_index('timestamp')[['predicted_hot_metal']], use_container_width=True)
         else:
             st.info("No predicted hot metal output data available.")
 
-        # Highlight anomalies on the output chart
-        anomaly_points = agg_df_last[agg_df_last['anomaly']]
+        # Highlight anomalies (raw data, last N)
+        anomaly_points = df_last[df_last['anomaly']]
         if not anomaly_points.empty:
-            st.warning(f"Anomalies detected at {len(anomaly_points)} time points. See table below.")
-            st.dataframe(anomaly_points[['timestamp', 'predicted_hot_metal'] + [c for c in agg_df_last.columns if c not in ['timestamp', 'predicted_hot_metal', 'anomaly']]])
+            st.warning(f"Anomalies detected at {len(anomaly_points)} time points (raw data). See table below.")
+            st.dataframe(anomaly_points)
+        else:
+            st.success("No anomalies detected in last N points (raw data).")
+
+        # -- OPTIONAL: Aggregated data view below --
+        st.subheader(f"Aggregated ({agg_level}) Data Table (for reference, not for time series plots)")
+        agg_df = aggregate_df(df, agg_level)
+        agg_df = add_predictions_and_anomalies(agg_df)
+        st.dataframe(agg_df.tail(20))
+
     else:
         st.info("Click the button to get sensor data or upload a CSV.")
 
