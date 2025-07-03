@@ -13,7 +13,6 @@ model = BlastFurnaceSimulator()
 uploaded_file = st.sidebar.file_uploader("Upload CSV data", type=["csv"])
 use_sample = st.sidebar.checkbox("Use sample (simulated) data", value=True if not uploaded_file else False)
 
-# How to view time series: raw, hourly, daily, monthly
 view_level = st.sidebar.selectbox(
     "View Time Series As",
     ["Raw Data", "Hourly", "Daily", "Monthly"],
@@ -76,17 +75,28 @@ with col1:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df = df.sort_values("timestamp")
 
-        # Choose view (raw or resampled)
+        # Always take last max_points AFTER resampling (or for raw)
         if view_level == "Raw Data":
-            df_view = df.tail(max_points)
+            df_view = df.tail(max_points).copy()
         elif view_level == "Hourly":
-            df_view = resample_data(df, "H").tail(max_points)
+            df_resampled = resample_data(df, "H")
+            df_view = df_resampled.tail(max_points).copy()
         elif view_level == "Daily":
-            df_view = resample_data(df, "D").tail(max_points)
+            df_resampled = resample_data(df, "D")
+            df_view = df_resampled.tail(max_points).copy()
         elif view_level == "Monthly":
-            df_view = resample_data(df, "M").tail(max_points)
+            df_resampled = resample_data(df, "M")
+            df_view = df_resampled.tail(max_points).copy()
         else:
-            df_view = df.tail(max_points)
+            df_view = df.tail(max_points).copy()
+
+        # Use index as serial number for x axis if all timestamps collapse to same value
+        if len(df_view['timestamp'].unique()) == 1:
+            df_view['serial'] = range(len(df_view))
+            x_axis = 'serial'
+            st.warning("All timestamps are the same. Showing serial number as x-axis.")
+        else:
+            x_axis = 'timestamp'
 
         # Add model predictions and anomalies
         df_view = add_predictions_and_anomalies(df_view)
@@ -99,13 +109,13 @@ with col1:
 
         st.subheader(f"Time Series Trends ({view_level}, last {max_points} points)")
         if plot_cols:
-            st.line_chart(df_view.set_index('timestamp')[plot_cols])
+            st.line_chart(df_view.set_index(x_axis)[plot_cols])
         else:
             st.info("No process variables available for plotting.")
 
         st.subheader(f"Predicted Hot Metal Output ({view_level}, last {max_points} points)")
         if 'predicted_hot_metal' in df_view.columns:
-            st.line_chart(df_view.set_index('timestamp')[['predicted_hot_metal']])
+            st.line_chart(df_view.set_index(x_axis)[['predicted_hot_metal']])
         else:
             st.info("No predicted hot metal output data available.")
 
@@ -115,7 +125,6 @@ with col1:
             st.dataframe(anomaly_points)
         else:
             st.success(f"No anomalies detected in last {max_points} points ({view_level}).")
-
     else:
         st.info("Click the button to get sensor data or upload a CSV.")
 
